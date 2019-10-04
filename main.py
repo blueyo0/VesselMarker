@@ -7,6 +7,10 @@ from PyQt5.QtCore import *
 from PaintView import *
 from mainWindow import *
 
+# 目前程序结构说明：
+#  main.py 定义File IO 和 左右图像的同步刷新
+#  mainWindow.py UI界面设计
+#  paintView.py 加强版QGraphicsView
 
 if __name__ == '__main__':
 	app = QApplication(sys.argv)
