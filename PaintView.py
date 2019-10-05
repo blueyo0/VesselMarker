@@ -18,23 +18,29 @@ class PointLine(object):
     width = 1
 
 class PaintView(QtWidgets.QGraphicsView):
+    # 存储有image,mask,paint三层
+    # 并将绿色背景的结果作为result一直存储着,方便其它显示界面调用
     isPressed = False
+    isCtrlPressed = False
     mouseButton = Qt.NoButton
     sPt = QPoint() #起点
     ePt = QPoint() #终点
     lineArr = [] #线条数组，存放PointLine
+    eraseArr = [] #橡皮线条数组，存放PointLine
     scale = 1.0
     resizeScale = 1.0
     penWidth = 5
     paintSignal = pyqtSignal()
     scrollToRight = True
     originPt = QPoint()
+    dragMousePt = QPoint()
 
     def __init__(self,dialog):
         super().__init__(dialog)
         self.setMouseTracking(True)
-        # self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        # self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.show()
         img = QImage(256,256,QImage.Format_ARGB32)
         img.fill(QColor(255, 255, 255, 255))
@@ -134,6 +140,7 @@ class PaintView(QtWidgets.QGraphicsView):
     def setPenWidth(self,w):
         self.penWidth = w
 #----------------------------[ Bool Function ]--------------------------------#
+    #如果不为白色（out of mask）返回False
     def isOutMask(self,viewPt):
         imagePt_f = self.mapToScene(int(viewPt.x()),int(viewPt.y()))\
                                     /(self.resizeScale*self.scale)
@@ -144,6 +151,7 @@ class PaintView(QtWidgets.QGraphicsView):
         else:
             return True
             
+    #判断两个点是否在指定距离外，用于进行橡皮擦除范围判断        
     def isInDistance(self, sPt, mPt, pw2):
         smPt = self.mapToScene(mPt)/(self.resizeScale*self.scale)
         x2 = sPt.x()/self.resizeScale-smPt.x()
@@ -153,7 +161,8 @@ class PaintView(QtWidgets.QGraphicsView):
         # print(x2,',',y2,' with',smPt)
         return x2 + y2 < pw2
 
-#----------------------------[ Paint System ]--------------------------------#
+#----------------------------[ Paint System ]--------------------------------#  
+    #修改三张图片(image,mask,paint)的大小
     def scaleChange(self,ns):
         s = ns*self.resizeScale
         self.imageScene.removeItem(self.imageItem)
@@ -208,6 +217,23 @@ class PaintView(QtWidgets.QGraphicsView):
         self.scale = self.scale - 0.2       
         self.scaleChange(self.scale)   
 
+    def eraseLineArr(self):
+        qp = QPainter(self.paintImg)         
+        qp.setCompositionMode(QPainter.CompositionMode_Clear)
+        pen = QPen()
+        # pen.setColor(QColor(255, 255, 255, 0))       
+        for i in range(len(self.eraseArr)-1, -1, -1):
+            pen.setWidth(self.eraseArr[i].width)
+            qp.setPen(pen)  
+            qp.drawLine(
+                self.eraseArr[i].startPt/self.resizeScale, 
+                self.eraseArr[i].endPt/self.resizeScale
+            )
+        self.eraseArr = []
+        # QMessageBox.information(self,"a",str((self.mapToScene(self.ePt)/offset).x()))
+        qp.end()
+        self.updateResult()
+
     def drawLineArr(self):
         # self.paintImg = self.inverseMaskImg
         #----------- 【已解决】 ------------------------------------------------#
@@ -224,7 +250,7 @@ class PaintView(QtWidgets.QGraphicsView):
         #------------------------------------------------------------------#
         pen = QPen()
         pen.setColor(QColor(255, 0, 0, 255))       
-        offset = self.scale*self.resizeScale
+        # offset = self.scale*self.resizeScale
         #-------------【已解决】------------------------------------------------------#
         # qp.drawLine(self.mapToScene(30,1)-self.mapFromScene(0,0), self.mapToScene(30,88)-self.mapFromScene(0,0))
         # BUG: 拖动和放缩会产生尾迹
@@ -242,7 +268,8 @@ class PaintView(QtWidgets.QGraphicsView):
                 self.lineArr[i].endPt/self.resizeScale
             )
             # print(self.lineArr[i].startPt/self.resizeScale,' ',self.lineArr[i].startPt/self.resizeScale)
-        
+        self.lineArr = []
+
         qp.setCompositionMode(QPainter.CompositionMode_DestinationOut)
         qp.drawImage(QPoint(0,0),self.defaultMaskImg)        
         qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
@@ -262,14 +289,15 @@ class PaintView(QtWidgets.QGraphicsView):
         qp.end()
         self.updateResult()
 
+    #清空paint层内容
     def clearPaints(self):
         pass
         # TO-DO
 
     def updateResult(self):
-        self.backgroundImg = QImage(self.paintImg.size(),QImage.Format_ARGB32)
-        self.backgroundImg.fill(QColor(0,255,0,255))
-        qp = QPainter(self.backgroundImg)
+        self.resultImg = QImage(self.paintImg.size(),QImage.Format_ARGB32)
+        self.resultImg.fill(QColor(0,255,0,255))
+        qp = QPainter(self.resultImg)
         qp.drawImage(QPoint(0,0),self.paintImg)
         qp.drawImage(QPoint(0,0),self.defaultMaskImg)
         qp.end()
@@ -278,23 +306,26 @@ class PaintView(QtWidgets.QGraphicsView):
 #----------------------------[ File System ]--------------------------------#
     def saveAnnotation(self,path):
         self.updateResult()
-        self.backgroundImg.save(path)
+        self.resultImg.save(path)
 
     def savePaintImg(self,path):
         self.paintImg.save(path)  
     
 #----------------------------[ Event System ]--------------------------------#
 
-    def dragMoveEvent(self, dmEvent):
-        print(dmEvent.answerRect())
+    # def dragMoveEvent(self, dmEvent):
+    #     print(dmEvent.answerRect())
 
     def paintEvent(self,event):
-        self.paintImg.fill(QColor(255, 255, 255, 0))
+        # self.paintImg.fill(QColor(255, 255, 255, 0))
         super().paintEvent(event)
         # qp = QPainter(self.viewport())
         # qp.drawPixmap(QPoint(0,0),self.imageItem.pixmap())
         # qp.end()
-        self.drawLineArr()
+        # if(len(self.lineArr)>0):
+        self.drawLineArr()  
+        # if(len(self.eraseArr)>0):
+        self.eraseLineArr()        
         newOriginPt = self.mapToScene(0,0) # modified at 26 sep
         if(newOriginPt.x()<self.originPt.x() or
            newOriginPt.y()<self.originPt.y()):
@@ -310,46 +341,69 @@ class PaintView(QtWidgets.QGraphicsView):
         # imagePt_f = self.mapToScene(mEvent.pos())/(self.resizeScale*self.scale)
         # imagePt = QPoint(int(imagePt_f.x()),int(imagePt_f.y()))
         # print((self.maskImg.pixel(imagePt)%0x1000000) < 0xFFFFFF)
-        if(self.isOutMask(mEvent.pos())):            
-            self.sPt = mEvent.pos()
-            self.ePt = mEvent.pos()
-            self.mouseButton = mEvent.button()    
+       
+        # if(self.isOutMask(mEvent.pos())):  # 成功实现在区域外的起点和终点
+        # pt = self.mapToScene(self.mapFromScene(0,0))
+        # QMessageBox.information(self,"aaa",str(pt.x())+' '+str(pt.y()));              
+        if(self.isCtrlPressed):
+            self.setDragMode(QGraphicsView.NoDrag)
+            self.setCursor(Qt.CrossCursor)
+        elif(mEvent.button()==Qt.LeftButton):
+            self.setDragMode(QGraphicsView.ScrollHandDrag) 
+            # 拖拽模式
+        elif(mEvent.button()==Qt.RightButton):
+            self.setCursor(Qt.PointingHandCursor)    
+        self.dragMousePt = mEvent.pos()
+        self.sPt = mEvent.pos()
+        self.ePt = mEvent.pos()
+        self.mouseButton = mEvent.button()    
 
     def mouseReleaseEvent(self, mEvent):
         self.mouseButton = Qt.NoButton
+        self.setDragMode(QGraphicsView.NoDrag)
+        self.setCursor(Qt.ArrowCursor)
                     
     def mouseMoveEvent(self, mEvent):
         # print("isOutMask: ",self.isOutMask(mEvent.pos()))
         if(
-            self.mouseButton == Qt.LeftButton and 
-            self.isOutMask(mEvent.pos())
+            self.mouseButton == Qt.LeftButton
         ):
-            self.ePt = mEvent.pos()           
-            newLine = PointLine()
-            newLine.startPt = (self.mapToScene(self.sPt)-self.mapToScene(self.mapFromScene(0,0)))/self.scale
-            newLine.endPt = (self.mapToScene(self.ePt)-self.mapToScene(self.mapFromScene(0,0)))/self.scale
-            newLine.width = self.penWidth
-            self.lineArr.append(newLine)
-            self.sPt = self.ePt
+            if(self.isCtrlPressed):
+                self.ePt = mEvent.pos()           
+                newLine = PointLine()
+                newLine.startPt = self.mapToScene(self.sPt)/self.scale
+                newLine.endPt = self.mapToScene(self.ePt)/self.scale
+                newLine.width = self.penWidth
+                self.lineArr.append(newLine)
+                self.sPt = self.ePt
+            else:
+                # [Drag Mode]
+                # QMessageBox.information(self,"aa",str(mEvent.x())+)
+                newPt = mEvent.pos()
+                offsetPt = newPt - self.dragMousePt
+                self.hScrollBar = self.horizontalScrollBar()
+                self.hScrollBar.setValue(self.hScrollBar.value()-offsetPt.x())
+                self.vScrollBar = self.verticalScrollBar()
+                self.vScrollBar.setValue(self.vScrollBar.value()-offsetPt.y())
+                self.dragMousePt = newPt
+
         elif(
             self.mouseButton == Qt.RightButton
         ):
-            pw2 = self.penWidth*self.penWidth
-            mPt = mEvent.pos()
-            # print("Right: ",mPt)
-            for i in range(len(self.lineArr)-1, -1, -1):
-                if( 
-                    self.isInDistance(self.lineArr[i].startPt,mPt,pw2) or 
-                    self.isInDistance(self.lineArr[i].endPt,mPt,pw2)
-                ):
-                    self.lineArr.pop(i)
-                    # print("pop ",i)
- 
+            self.ePt = mEvent.pos()           
+            newLine = PointLine()
+            newLine.startPt = self.mapToScene(self.sPt)/self.scale
+            newLine.endPt = self.mapToScene(self.ePt)/self.scale
+            newLine.width = self.penWidth
+            self.eraseArr.append(newLine)
+            self.sPt = self.ePt
+
     def wheelEvent (self, wEvent):
         if(wEvent.angleDelta().y()>0):
             self.zoomIn()
         else:
             self.zoomOut()
+
 
 
 
