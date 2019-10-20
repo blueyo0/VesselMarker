@@ -52,24 +52,24 @@ class PaintView(QtWidgets.QGraphicsView):
         self.resizeScale = 1.0
         self.defaultImg = image.convertToFormat(QImage.Format_ARGB32)
         self.maskImg = mask.convertToFormat(QImage.Format_ARGB32)
-        self.defaultMaskImg = QImage(self.maskImg.size(),QImage.Format_ARGB32)
+        self.defaultMaskImg = QImage(self.maskImg.size(), QImage.Format_ARGB32)
         for i in range(self.maskImg.width()):
             for j in range(self.maskImg.height()):
-                color = self.maskImg.pixel(i,j)%0x1000000
+                color = self.maskImg.pixel(i, j)%0x1000000
                 if(color > 0x000000):
-                    self.maskImg.setPixel(i,j,0x00FFFFFF)
-                    self.defaultMaskImg.setPixel(i,j,0x00FFFFFF)
+                    self.maskImg.setPixel(i, j, 0x00FFFFFF)
+                    self.defaultMaskImg.setPixel(i, j, 0x00FFFFFF)
                 else:
-                    self.maskImg.setPixel(i,j,0x80000000)
-                    self.defaultMaskImg.setPixel(i,j,0xFF000000)
+                    self.maskImg.setPixel(i, j, 0x80000000)
+                    self.defaultMaskImg.setPixel(i, j, 0xFF000000)
 
-        self.paintImg = QImage(self.defaultImg.size(),QImage.Format_ARGB32)
+        self.paintImg = QImage(self.defaultImg.size(), QImage.Format_ARGB32)
         self.paintImg.fill(QColor(255, 255, 255, 0))
         self.imageScene = QGraphicsScene(self)
         
         length = self.defaultImg.width() \
-                if (self.defaultImg.width()>self.defaultImg.height()) \
-                else self.defaultImg.height() 
+                 if (self.defaultImg.width()>self.defaultImg.height()) \
+                 else self.defaultImg.height() 
         if(length!=0):       
             self.resizeScale = self.width()/length*1.2
         newSize = QSize(
@@ -142,8 +142,9 @@ class PaintView(QtWidgets.QGraphicsView):
 #----------------------------[ Bool Function ]--------------------------------#
     #如果不为白色（out of mask）返回False
     def isOutMask(self,viewPt):
-        imagePt_f = self.mapToScene(int(viewPt.x()),int(viewPt.y()))\
-                                    /(self.resizeScale*self.scale)
+        imagePt_f = (self.mapToScene(int(viewPt.x()),
+                                     int(viewPt.y()))
+                     /(self.resizeScale*self.scale))
         imagePt = QPoint(int(imagePt_f.x()),int(imagePt_f.y()))
         # print(self.maskImg.pixel(imagePt))
         if((self.maskImg.pixel(imagePt)%0x1000000) < 0xFFFFFF):
@@ -327,11 +328,11 @@ class PaintView(QtWidgets.QGraphicsView):
         # if(len(self.eraseArr)>0):
         self.eraseLineArr()        
         newOriginPt = self.mapToScene(0,0) # modified at 26 sep
-        if(newOriginPt.x()<self.originPt.x() or
-           newOriginPt.y()<self.originPt.y()):
+        if (newOriginPt.x()<self.originPt.x() or
+            newOriginPt.y()<self.originPt.y()): 
             self.scrollToRight = False
-        elif(newOriginPt.x()>self.originPt.x() or
-             newOriginPt.y()>self.originPt.y()):
+        elif (newOriginPt.x()>self.originPt.x() or
+              newOriginPt.y()>self.originPt.y()):
             self.scrollToRight = True
         self.originPt = newOriginPt
         self.paintSignal.emit()
